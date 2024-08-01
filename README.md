@@ -1,4 +1,4 @@
-# From Galaxy Zoo DECaLS to BASS/MzLS/
+# From Galaxy Zoo DECaLS to BASS/MzLS
 This repository contains the code for fine-tune a source domain model (trained on the DECaLS survey) to the BASS/MzLS surveys through unsupervised domain adaptation (UDA). For detailed information on the algorithm, please refer to the original paper (citation to be added).
 
 ## Overview
