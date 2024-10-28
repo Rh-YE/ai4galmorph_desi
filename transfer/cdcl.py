@@ -24,22 +24,22 @@ import csv
 
 class SphericalKMeans:
     def __init__(self, n_clusters, init_centers, max_iters=100, tol=1e-4):
-        self.n_clusters = n_clusters
-        self.max_iters = max_iters
-        self.tol = tol
-        self.centroids = init_centers
-        self.question_answer_pairs = gz2_pairs
-        self.dependencies = gz2_and_decals_dependencies
-        self.schema = schemas.Schema(self.question_answer_pairs, self.dependencies)
+        self.n_clusters = n_clusters # num of cluster center, equal to num of answers
+        self.max_iters = max_iters # maximum iteration for Kmeans
+        self.tol = tol # tolerence between last center and new center
+        self.centroids = init_centers # initial centroids, equal to weight of W_s
+        self.question_answer_pairs = gz2_pairs # galaxy zoo answer pairs, from W21
+        self.dependencies = gz2_and_decals_dependencies # galaxy zoo answer dependicies, from W21
+        self.schema = schemas.Schema(self.question_answer_pairs, self.dependencies) # galaxy zoo answer schema, from W21
     def threshold_and_modify(self, tensor):
-        return tensor
+        return tensor # extension for assign distance threshold between centroids and feature vectors
     def fit(self, X):
         for iter in range(self.max_iters):
-            prev_centroids = self.centroids.clone()
+            prev_centroids = self.centroids.clone() # last centroids
             similarities = (torch.matmul(X, torch.Tensor(prev_centroids.T).to(X.device))) # compute cosine similarity
             similarities = self.threshold_and_modify(similarities.clone()) # threshold and modify similarities
             cluster_assignments = torch.zeros_like(similarities) # initialize cluster assignments
-            for q_n in range(len(self.schema.question_index_groups)):
+            for q_n in range(len(self.schema.question_index_groups)): # iter among questions
                 q_indices = self.schema.question_index_groups[q_n] 
                 q_start = q_indices[0]
                 q_end = q_indices[1]
@@ -66,22 +66,22 @@ def enable_dropout(model):
 def get_center(model):
     classifier_weights = model.module.net.classifier[1].weight.data
     classifier_weights = F.normalize(classifier_weights, p=2, dim=1)
-    return classifier_weights
+    return classifier_weights # L2 normalize the weight of classifier
 
 class DomainAdaptation():
     def __init__(self, tau, model, config, optimizer,scheduler):
-        self.tau = tau
-        self.model = model
+        self.tau = tau # temperature hyper-parameter
+        self.model = model # AI model
         self.config = config
         self.optimizer = optimizer
         self.question_answer_pairs = gz2_pairs
         self.dependencies = gz2_and_decals_dependencies
         self.schema = schemas.Schema(self.question_answer_pairs, self.dependencies)
-        self.device = "cuda:1"
+        self.device = "cuda:1" # cuda idx
         self.prototypes = None
         self.cluster_centers = None
         self.scheduler = scheduler
-    def predict(self, run_dir, model, data_loader, num_samples, output_file, schema):
+    def predict(self, run_dir, model, data_loader, num_samples, output_file, schema): # not important, related to your downstream tasks
         with open(run_dir+output_file, 'w', newline='') as file:
             writer = csv.writer(file)
             header = []
@@ -121,7 +121,7 @@ class DomainAdaptation():
                         row.append(entropy[i, q_n].item())
                     writer.writerow(row)
                     
-    def compute_infoNCE_loss(self, z_t, W_s, pseudo_labels, t):
+    def compute_infoNCE_loss(self, z_t, W_s, pseudo_labels, t): # loss function
         total = torch.mm(z_t, W_s.t()) / t
         loss = torch.zeros((total.shape[0], 10))
         for q_n in range(len(self.schema.question_index_groups)):
@@ -133,6 +133,9 @@ class DomainAdaptation():
         return -loss.sum(dim=1).mean()
     
     def extract_feas(self, loader):
+        """
+        get feature vector and normalize, from batches
+        """
         features_list = []
         self.model.eval()
         with torch.no_grad():
@@ -145,6 +148,9 @@ class DomainAdaptation():
         return features_matrix
     
     def clustering(self, features_matrix, init_centers):
+        """
+        fitting k-means
+        """
         skmeans = SphericalKMeans(n_clusters=34, init_centers=init_centers)
         skmeans.fit(features_matrix)
         cluster_centers =skmeans.centroids
@@ -157,8 +163,9 @@ class DomainAdaptation():
     
     def pseudo_label(self, X, epoch):
         X_norm = F.normalize(X, p=2, dim=1)
-        similarities = (torch.matmul(X_norm, self.cluster_centers.t().to(X_norm.device)))
+        similarities = (torch.matmul(X_norm, self.cluster_centers.t().to(X_norm.device))) 
         percent = 0.1
+         # only do top_10_percent distance which is confident, using percent instead of fixed value benefits high-dim latent space
         top_10_percent = int(percent * similarities.size(0))
         selected_rows = torch.zeros(similarities.size(0), dtype=torch.bool)
         for i in range(similarities.size(1)):
@@ -223,8 +230,8 @@ class DomainAdaptation():
     def train_unsupervised(self, train_data, valid_data, init_loader):
         os.makedirs(self.config.save_dir + "log/", exist_ok=True)
         writer = SummaryWriter(self.config.save_dir + "log/")
-        self.prototypes = get_center(self.model) # prototypes = source model's last layer weights
-        self.cluster_centers = get_center(self.model)
+        self.prototypes = get_center(self.model) # prototypes = source model's last layer (classifier, after flattened) weights
+        self.cluster_centers = get_center(self.model) # it will be modified after k-means
         for param in self.model.module.net.classifier.parameters(): # freeze the classifier
             param.requires_grad = False
         for epoch in range(self.config.epochs):
@@ -232,6 +239,7 @@ class DomainAdaptation():
                 print(f"{self.config.save_dir.split('/')[-2]}_{epoch}.csv")
             features, self.cluster_centers = self.initialize_centers(init_loader, self.prototypes, epoch)  # initialize cluster centers with prototypes 
             
+            # assigning pseudo label and initialize Dataloader for non-zero pseudo labels (not meet threshold)
             pseudo_labels = self.pseudo_label(features, epoch)
             train_data.set_pseudo_labels(pseudo_labels.detach().cpu())
             pseudo_indices = torch.nonzero((pseudo_labels.sum(dim=1)!=0)).squeeze().tolist()
@@ -384,5 +392,6 @@ def main(**kwargs):
     
     adapter = DomainAdaptation(c.tau, model, c, optimizer, scheduler=scheduler)
     adapter.train_unsupervised(train_data, valid_data, init_loader)
+    
 if __name__ == "__main__":
     main()
