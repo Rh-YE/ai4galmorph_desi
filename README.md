@@ -6,7 +6,7 @@ This repository represents work initiated by the first author of the paper since
 
 The primary purpose of making this code open-source is to help readers interested in galaxy morphology classification understand the implementation of unsupervised domain adaptation algorithms and utilize our model weights for predictions. Given the rapid evolution of neural network algorithms, training models on DESI-LIS for galaxy morphology classification using `Zoobot` alone is relatively straightforward, with many models capable of achieving comparable performance. Therefore, this repository does not delve deeply into the source domain training methods.
 
-Some portions of the code in this repository are based on the `Zoobot` repository, particularly the label processing parts. We acknowledge the contributions of Walmsley et al. to the field of galaxy morphology classification.
+Some portions of the code in this repository are based on the [`Zoobot`](https://joss.theoj.org/papers/10.21105/joss.05312) repository, particularly the label processing parts. 
 
 ## Structure
 
